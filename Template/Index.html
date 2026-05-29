@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claw Assistant - AI Hub</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🦞 Claw Assistant</h1>
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="chat">💬 Chat</button>
+            <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
+        </div>
+
+        <!-- Tab Chat -->
+        <div id="chat-tab" class="tab-content active">
+            <div class="model-selector">
+                <label>Model aktif:</label>
+                <select id="modelSelect"></select>
+            </div>
+            <div class="chat-box" id="chatBox">
+                <div class="message system">Selamat datang di Claw Assistant. Pilih model dan mulai chat.</div>
+            </div>
+            <div class="input-area">
+                <textarea id="userInput" rows="2" placeholder="Ketik pesan..."></textarea>
+                <button id="sendBtn">Kirim</button>
+            </div>
+        </div>
+
+        <!-- Tab Settings -->
+        <div id="settings-tab" class="tab-content">
+            <h2>🔑 API Keys & Channels</h2>
+            <form id="settingsForm">
+                <fieldset>
+                    <legend>Telegram Bot</legend>
+                    <label><input type="checkbox" id="telegramEnabled"> Aktifkan Telegram</label>
+                    <input type="text" id="telegramToken" placeholder="Bot Token">
+                    <label>Allowed User IDs (pisahkan koma):</label>
+                    <input type="text" id="allowedUsers" placeholder="123456789,987654321">
+                </fieldset>
+                <fieldset>
+                    <legend>WhatsApp Business (Cloud API)</legend>
+                    <label><input type="checkbox" id="whatsappEnabled"> Aktifkan WhatsApp</label>
+                    <input type="text" id="whatsappToken" placeholder="WhatsApp Token">
+                    <input type="text" id="whatsappPhoneID" placeholder="Phone ID">
+                </fieldset>
+                <fieldset>
+                    <legend>Cloud AI Providers (API Key)</legend>
+                    <input type="text" id="openrouterKey" placeholder="OpenRouter Key">
+                    <input type="text" id="geminiKey" placeholder="Gemini Key">
+                    <input type="text" id="groqKey" placeholder="Groq Key">
+                    <input type="text" id="deepseekKey" placeholder="DeepSeek Key">
+                    <input type="text" id="openaiKey" placeholder="OpenAI Key">
+                </fieldset>
+                <fieldset>
+                    <legend>Local AI (Ollama)</legend>
+                    <input type="text" id="ollamaUrl" placeholder="Ollama URL (default http://localhost:11434)">
+                    <select id="ollamaModelSelect"></select>
+                    <button type="button" id="pullModelBtn">Download Model Baru</button>
+                    <input type="text" id="newOllamaModel" placeholder="Nama model, e.g. llama3:latest">
+                </fieldset>
+                <fieldset>
+                    <legend>Pilihan Model Default</legend>
+                    <select id="defaultModel">
+                        <option value="local">Local Ollama</option>
+                        <option value="openrouter">OpenRouter</option>
+                        <option value="groq">Groq</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="gemini">Gemini</option>
+                    </select>
+                </fieldset>
+                <button type="submit">💾 Simpan Semua Pengaturan</button>
+            </form>
+        </div>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+  </html>
