@@ -1,0 +1,5 @@
+config.json
+.env
+*.exe
+*.log
+models/
