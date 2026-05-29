@@ -20,8 +20,6 @@ import (
 	"github.com/mymmrac/telego"
 	"github.com/mymmrac/telego/telegoutil"
 	"github.com/sashabaranov/go-openai"
-	"google.golang.org/api/generativeai"
-	"google.golang.org/api/option"
 )
 
 // ==================================================================
@@ -43,8 +41,8 @@ type Config struct {
 	OpenRouterModel string `json:"openrouter_model"` // default "openai/gpt-3.5-turbo"
 
 	// Ollama
-	OllamaURL       string `json:"ollama_url"`
-	OllamaModel     string `json:"ollama_model"`
+	OllamaURL   string `json:"ollama_url"`
+	OllamaModel string `json:"ollama_model"`
 
 	// Telegram
 	TelegramToken      string  `json:"telegram_token"`
@@ -148,45 +146,70 @@ func (p *OpenAICompatibleProvider) Chat(messages []Message) (string, error) {
 }
 func (p *OpenAICompatibleProvider) Name() string { return p.name }
 
-// Gemini Provider (menggunakan library google.golang.org/api)
+// Gemini Provider (via HTTP langsung, tidak pakai library khusus)
 type GeminiProvider struct {
-	client *generativeai.Client
+	apiKey string
 	model  string
 }
 
-func NewGeminiProvider(apiKey, model string) (*GeminiProvider, error) {
-	ctx := context.Background()
-	client, err := generativeai.NewClient(ctx, option.WithAPIKey(apiKey))
-	if err != nil {
-		return nil, err
-	}
-	return &GeminiProvider{client: client, model: model}, nil
-}
-
 func (p *GeminiProvider) Chat(messages []Message) (string, error) {
-	// Ambil system prompt dan user message terakhir
-	var system string
-	var userMsg string
-	for _, m := range messages {
-		if m.Role == "system" {
-			system = m.Content
-		} else if m.Role == "user" {
-			userMsg = m.Content
+	// Gemini API: https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={API_KEY}
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", p.model, p.apiKey)
+	
+	// Konversi messages ke format Gemini
+	var contents []map[string]interface{}
+	var systemInstruction string
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			systemInstruction = msg.Content
+		} else {
+			role := "user"
+			if msg.Role == "assistant" {
+				role = "model"
+			}
+			contents = append(contents, map[string]interface{}{
+				"role": role,
+				"parts": []map[string]string{{"text": msg.Content}},
+			})
 		}
 	}
-	ctx := context.Background()
-	genModel := p.client.GenerativeModel(p.model)
-	if system != "" {
-		genModel.SystemInstruction = &generativeai.Content{
-			Parts: []generativeai.Part{generativeai.Text(system)},
+	reqBody := map[string]interface{}{
+		"contents": contents,
+	}
+	if systemInstruction != "" {
+		reqBody["systemInstruction"] = map[string]interface{}{
+			"parts": []map[string]string{{"text": systemInstruction}},
 		}
 	}
-	resp, err := genModel.GenerateContent(ctx, generativeai.Text(userMsg))
+	jsonData, _ := json.Marshal(reqBody)
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
-	if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
-		return fmt.Sprintf("%s", resp.Candidates[0].Content.Parts[0]), nil
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	json.Unmarshal(body, &result)
+	if result.Error.Message != "" {
+		return "", fmt.Errorf("Gemini error: %s", result.Error.Message)
+	}
+	if len(result.Candidates) > 0 && len(result.Candidates[0].Content.Parts) > 0 {
+		return result.Candidates[0].Content.Parts[0].Text, nil
 	}
 	return "", fmt.Errorf("no response from Gemini")
 }
@@ -263,14 +286,14 @@ func getProvider() (LLMProvider, error) {
 		return &OpenAICompatibleProvider{
 			apiKey:  config.OpenRouterKey,
 			baseURL: "https://openrouter.ai/api/v1",
-			model:   config.OpenRouterModel, // bisa diubah kapan saja
+			model:   config.OpenRouterModel,
 			name:    "OpenRouter",
 		}, nil
 	case "gemini":
 		if config.GeminiKey == "" {
 			return nil, fmt.Errorf("Gemini API key missing")
 		}
-		return NewGeminiProvider(config.GeminiKey, "gemini-pro")
+		return &GeminiProvider{apiKey: config.GeminiKey, model: "gemini-pro"}, nil
 	case "ollama":
 		return &OllamaProvider{baseURL: config.OllamaURL, model: config.OllamaModel}, nil
 	default:
@@ -321,7 +344,6 @@ func listDir(path string) (string, error) {
 
 func webSearch(query string) (string, error) {
 	// Placeholder: integrasi dengan Brave Search atau DuckDuckGo
-	// Untuk demo, kita kembalikan pesan
 	return fmt.Sprintf("Hasil pencarian untuk '%s' (integrasi web search butuh API key)", query), nil
 }
 
@@ -350,8 +372,7 @@ var subAgents = []SubAgent{
 		Name:        "calculator",
 		Description: "Menghitung ekspresi matematika sederhana",
 		Process: func(input string) (string, error) {
-			// Evaluasi ekspresi matematika (sangat sederhana)
-			// Dalam production gunakan library seperti govaluate
+			// Untuk demo, kita kembalikan pesan
 			return fmt.Sprintf("Hasil dari %s = (contoh: implementasi eval)", input), nil
 		},
 	},
@@ -381,13 +402,10 @@ func callSubAgent(agentName, input string) (string, error) {
 // 5. Cron Scheduler (Placeholder)
 // ==================================================================
 
-type CronScheduler struct {
-	// Placeholder
-}
+type CronScheduler struct{}
 
 func (c *CronScheduler) AddJob(schedule string, cmd func()) {
 	fmt.Printf("Menambahkan job dengan schedule %s (integrasi cron belum selesai)\n", schedule)
-	// TODO: implement with robfig/cron
 }
 
 // ==================================================================
@@ -425,7 +443,7 @@ func startTelegramBot() {
 			if update.Message != nil && update.Message.Text != nil {
 				userID := update.Message.From.ID
 				// Cek whitelist
-				allowed := len(config.AllowedTelegramIDs) == 0 // jika kosong, semua diizinkan
+				allowed := len(config.AllowedTelegramIDs) == 0
 				for _, uid := range config.AllowedTelegramIDs {
 					if uid == userID {
 						allowed = true
@@ -458,7 +476,6 @@ func handleTelegramMessage(bot *telego.Bot, message *telego.Message) {
 	if err != nil {
 		reply = "Error: " + err.Error()
 	}
-	// Batasi panjang pesan (Telegram max 4096)
 	if len(reply) > 4000 {
 		reply = reply[:4000] + "..."
 	}
@@ -586,7 +603,6 @@ func chatCLI() {
 		}
 		fmt.Println(reply)
 		messages = append(messages, Message{Role: "assistant", Content: reply})
-		// Batasi history
 		if len(messages) > 20 {
 			messages = messages[2:]
 		}
@@ -669,7 +685,6 @@ func configMenu() {
 			}
 			saveConfig()
 			fmt.Println("✅ Pengaturan Telegram disimpan. Restart bot jika perlu.")
-			// restart bot sederhana (panggil ulang startTelegramBot)
 			go startTelegramBot()
 		case 6:
 			fmt.Println("System prompt saat ini:")
@@ -706,7 +721,6 @@ func main() {
 	// Load .env (opsional)
 	godotenv.Load()
 	loadConfig()
-	// Buat workspace
 	os.MkdirAll(config.WorkspaceDir, 0755)
 
 	// Start Telegram bot jika diaktifkan
